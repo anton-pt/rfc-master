@@ -100,6 +100,14 @@ export class RFCDomainModel {
     return await this.reviewService.isReviewComplete(reviewRequestId);
   }
 
+  async getActiveReviewForRFC(rfcId: string): Promise<ReviewRequest | null> {
+    return await this.reviewService.getActiveReviewForRFC(rfcId);
+  }
+
+  async addReviewersToActiveReview(rfcId: string, newReviewerIds: string[]): Promise<ReviewRequest> {
+    return await this.reviewService.addReviewersToActiveReview(rfcId, newReviewerIds);
+  }
+
   async replaceString(params: ReplaceStringParams): Promise<RFC> {
     return await this.rfcService.replaceString(params);
   }

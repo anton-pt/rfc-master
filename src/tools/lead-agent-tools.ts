@@ -225,7 +225,10 @@ export const requestReview = tool({
     const logContext = logToolStart('requestReview', { rfcId, reviewerTypes, specificConcerns });
     
     try {
-      // First create the review request record for tracking
+      // Check if there's already an active review request
+      const activeReview = await domainModel.getActiveReviewForRFC(rfcId);
+      
+      // Get or create reviewer agents
       const reviewerAgents = [];
       for (const type of reviewerTypes) {
         const agentTypeEnum = type.toUpperCase() as keyof typeof AgentType;
@@ -241,11 +244,21 @@ export const requestReview = tool({
         reviewerAgents.push(agent);
       }
 
-      const reviewRequest = await domainModel.requestReview({
-        rfcId,
-        requestedBy: leadAgentId,
-        reviewerAgentIds: reviewerAgents.map(a => a.id)
-      });
+      let reviewRequest;
+      if (activeReview) {
+        console.log('   📋 Active review found, adding new reviewers to existing request...');
+        
+        // Add new reviewers to the existing request
+        const newReviewerIds = reviewerAgents.map(a => a.id);
+        reviewRequest = await domainModel.addReviewersToActiveReview(rfcId, newReviewerIds);
+      } else {
+        console.log('   📋 No active review found, creating new review request...');
+        reviewRequest = await domainModel.requestReview({
+          rfcId,
+          requestedBy: leadAgentId,
+          reviewerAgentIds: reviewerAgents.map(a => a.id)
+        });
+      }
 
       // Add a context comment if specific concerns were mentioned
       if (specificConcerns) {

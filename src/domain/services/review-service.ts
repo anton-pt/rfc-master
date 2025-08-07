@@ -141,6 +141,32 @@ export class ReviewService {
     return await this.storage.reviews.getByRFC(rfcId);
   }
 
+  async addReviewersToActiveReview(rfcId: string, newReviewerIds: string[]): Promise<ReviewRequest> {
+    const activeReview = await this.storage.reviews.getActiveByRFC(rfcId);
+    if (!activeReview) {
+      throw new Error(`No active review found for RFC ${rfcId}`);
+    }
+
+    // Validate new reviewers exist and have permission
+    for (const reviewerId of newReviewerIds) {
+      if (!activeReview.reviewerAgentIds.includes(reviewerId)) {
+        const agent = await this.storage.agents.getById(reviewerId);
+        if (!agent) {
+          throw new Error(`Reviewer agent with id ${reviewerId} not found`);
+        }
+        if (!agent.capabilities.canComment) {
+          throw new Error(`Agent ${reviewerId} does not have permission to review`);
+        }
+
+        // Add to reviewers list and set status to pending
+        activeReview.reviewerAgentIds.push(reviewerId);
+        activeReview.reviewStatuses[reviewerId] = ReviewStatus.PENDING;
+      }
+    }
+
+    return await this.storage.reviews.update(activeReview);
+  }
+
   private validateRequestParams(params: RequestReviewParams): void {
     if (!params.rfcId || params.rfcId.trim().length === 0) {
       throw new Error('RFC ID is required');
