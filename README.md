@@ -119,7 +119,7 @@ const review = await model.requestReview({
 
 ```typescript
 import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
+import { openai } from '@ai-sdk/openai';
 import { leadAgentTools, initializeTools } from './src/tools';
 
 // Initialize tools
@@ -157,6 +157,7 @@ const rfc = generateRFCTemplate({
 ## Tool Specifications
 
 Each tool includes:
+
 - **Zod schema validation** for parameters
 - **Comprehensive error handling** with user-friendly messages  
 - **Type-safe interfaces** with TypeScript
@@ -210,17 +211,20 @@ npm run test:watch
 ## Architecture Decisions
 
 ### Domain-Driven Design
+
 - Clean separation of business logic and infrastructure
 - Rich domain models with behavior encapsulation
 - Repository pattern for data persistence abstraction
 
 ### Tool Design
+
 - Each tool has single responsibility
 - Consistent error handling patterns
 - Validation at tool boundaries with Zod schemas
 - Async-first design for scalability
 
 ### Storage Strategy
+
 - Interface-based persistence layer
 - In-memory implementation for development
 - Easy migration to database backends
@@ -238,6 +242,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 ### TypeScript Configuration
 
 The project uses strict TypeScript settings:
+
 - Strict null checks
 - No unused locals/parameters  
 - No implicit returns
@@ -294,6 +299,7 @@ ISC License - See package.json for details.
 ## Support
 
 For issues and questions:
+
 - Review the examples in `src/examples/`
 - Check the test files for usage patterns
 - Examine the domain model documentation

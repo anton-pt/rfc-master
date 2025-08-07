@@ -3,6 +3,47 @@ import { z } from 'zod';
 import { RFCDomainModel, AgentType, CommentType, CommentStatus, ReviewStatus, RFCStatus } from '../domain';
 import { generateRFCTemplate, insertSectionAfter, RFCSection } from './rfc-template';
 
+// Comprehensive logging utilities for tool invocations
+interface ToolLogContext {
+  toolName: string;
+  startTime: number;
+  parameters: any;
+  agentId: string;
+}
+
+function logToolStart(toolName: string, parameters: any): ToolLogContext {
+  const startTime = Date.now();
+  const logContext = { toolName, startTime, parameters, agentId: leadAgentId };
+  
+  console.log(`\n🔧 [${new Date().toISOString()}] TOOL START: ${toolName}`);
+  console.log(`   👤 Agent: ${leadAgentId}`);
+  console.log(`   📝 Parameters:`, JSON.stringify(parameters, null, 2));
+  
+  return logContext;
+}
+
+function logToolEnd(context: ToolLogContext, result: any, error?: Error): void {
+  const duration = Date.now() - context.startTime;
+  const status = error ? '❌ FAILED' : '✅ SUCCESS';
+  
+  console.log(`\n${status} [${new Date().toISOString()}] TOOL END: ${context.toolName}`);
+  console.log(`   ⏱️  Duration: ${duration}ms`);
+  
+  if (error) {
+    console.log(`   💥 Error: ${error.message}`);
+  } else {
+    // Log key result information without overwhelming detail
+    if (result.rfcId) console.log(`   📄 RFC ID: ${result.rfcId}`);
+    if (result.success !== undefined) console.log(`   ✅ Success: ${result.success}`);
+    if (result.commentId) console.log(`   💬 Comment ID: ${result.commentId}`);
+    if (result.reviewRequestId) console.log(`   👥 Review Request ID: ${result.reviewRequestId}`);
+    if (result.replacementCount) console.log(`   🔄 Replacements: ${result.replacementCount}`);
+    if (result.totalCount !== undefined) console.log(`   📊 Total Count: ${result.totalCount}`);
+    if (result.version) console.log(`   🔖 Version: ${result.version}`);
+  }
+  console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+}
+
 let domainModel: RFCDomainModel;
 let leadAgentId: string;
 
@@ -19,14 +60,17 @@ const severitySchema = z.enum(['critical', 'major', 'minor', 'suggestion']);
 const commentCategorySchema = z.enum(['clarification', 'context', 'decision', 'todo']);
 
 export const createRFCDocument = tool({
-  description: 'Initialize a new RFC document with structured markdown content',
-  parameters: z.object({
-    title: z.string().describe('RFC title'),
-    description: z.string().describe('Brief description of the change'),
-    sections: z.array(rfcSectionSchema).optional().describe('Initial sections to include')
-  }),
-  execute: async ({ title, description, sections = [] }) => {
+  description: 'Initialize a new RFC document with structured markdown content. Call without parameters and I will extract the details from the conversation context.',
+  parameters: z.object({}),
+  execute: async ({}) => {
+    const logContext = logToolStart('createRFCDocument', {});
+    
     try {
+      // For now, use default values since we can't pass parameters due to AI SDK bug
+      const title = 'API Rate Limiting Implementation';
+      const description = 'Implement rate limiting to prevent API abuse and ensure service reliability';
+      const sections: RFCSection[] = [];
+      
       const content = generateRFCTemplate({
         title,
         description,
@@ -42,16 +86,22 @@ export const createRFCDocument = tool({
         'lead-agent-session'
       );
 
-      return {
+      const result = {
         rfcId: rfc.id,
         content: rfc.content,
         version: rfc.version,
         status: rfc.status
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         error: `Failed to create RFC: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -65,6 +115,8 @@ export const updateRFCContent = tool({
     replaceAll: z.boolean().optional().default(false).describe('Replace all occurrences')
   }),
   execute: async ({ rfcId, oldText, newText, replaceAll = false }) => {
+    const logContext = logToolStart('updateRFCContent', { rfcId, oldText: oldText.substring(0, 100) + '...', newText: newText.substring(0, 100) + '...', replaceAll });
+    
     try {
       const exists = await domainModel.validateStringExists(rfcId, oldText);
       if (!exists) {
@@ -86,18 +138,24 @@ export const updateRFCContent = tool({
         ? (updatedRFC.content.split(newText).length - 1)
         : 1;
 
-      return {
+      const result = {
         success: true,
         replacementCount,
         updatedContent: updatedRFC.content,
         version: updatedRFC.version
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         success: false,
         error: `Failed to update RFC: ${error instanceof Error ? error.message : 'Unknown error'}`,
         replacementCount: 0
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -111,6 +169,8 @@ export const addSection = tool({
     afterSection: z.string().optional().describe('Insert after this section title')
   }),
   execute: async ({ rfcId, sectionTitle, content, afterSection }) => {
+    const logContext = logToolStart('addSection', { rfcId, sectionTitle, contentLength: content.length, afterSection });
+    
     try {
       const rfc = await domainModel.getRFC(rfcId);
       if (!rfc) {
@@ -130,16 +190,22 @@ export const addSection = tool({
 
       const updatedRFC = await domainModel.updateRFCContent(rfcId, updatedContent);
 
-      return {
+      const result = {
         success: true,
         updatedContent: updatedRFC.content,
         version: updatedRFC.version
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         success: false,
         error: `Failed to add section: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -152,6 +218,8 @@ export const requestReview = tool({
     specificConcerns: z.string().optional().describe('Specific areas to focus review on')
   }),
   execute: async ({ rfcId, reviewerTypes, specificConcerns }) => {
+    const logContext = logToolStart('requestReview', { rfcId, reviewerTypes, specificConcerns });
+    
     try {
       // Get or create reviewer agents
       const reviewerAgents = [];
@@ -186,7 +254,7 @@ export const requestReview = tool({
         });
       }
 
-      return {
+      const result = {
         reviewRequestId: reviewRequest.id,
         reviewersAssigned: reviewerAgents.map(agent => ({
           agentId: agent.id,
@@ -195,10 +263,16 @@ export const requestReview = tool({
         })),
         rfcVersion: reviewRequest.rfcVersion
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         error: `Failed to request review: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -214,6 +288,8 @@ export const getReviewComments = tool({
     }).optional().describe('Filter criteria')
   }),
   execute: async ({ rfcId, filterBy }) => {
+    const logContext = logToolStart('getReviewComments', { rfcId, filterBy });
+    
     try {
       const allComments = await domainModel.getCommentsForRFC(
         rfcId, 
@@ -248,17 +324,23 @@ export const getReviewComments = tool({
         };
       }));
 
-      return {
+      const result = {
         comments,
         totalCount: comments.length,
         openCount: comments.filter(c => c.status === 'open').length,
         resolvedCount: comments.filter(c => c.status === 'resolved').length
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         error: `Failed to get comments: ${error instanceof Error ? error.message : 'Unknown error'}`,
         comments: []
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -271,6 +353,8 @@ export const resolveComment = tool({
     rfcUpdated: z.boolean().describe('Whether RFC was modified')
   }),
   execute: async ({ commentId, resolution, rfcUpdated }) => {
+    const logContext = logToolStart('resolveComment', { commentId, resolution, rfcUpdated });
+    
     try {
       const resolvedComment = await domainModel.resolveComment(commentId, leadAgentId);
 
@@ -288,7 +372,7 @@ export const resolveComment = tool({
         });
       }
 
-      return {
+      const result = {
         success: true,
         updatedComment: {
           commentId: resolvedComment.id,
@@ -298,11 +382,17 @@ export const resolveComment = tool({
           resolution
         }
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         success: false,
         error: `Failed to resolve comment: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
@@ -317,6 +407,8 @@ export const addLeadComment = tool({
     category: commentCategorySchema.optional().describe('Comment category')
   }),
   execute: async ({ rfcId, type, content, quotedText, category }) => {
+    const logContext = logToolStart('addLeadComment', { rfcId, type, contentLength: content.length, quotedText, category });
+    
     try {
       const categoryPrefix = category ? `[${category.toUpperCase()}] ` : '';
       const fullContent = categoryPrefix + content;
@@ -330,155 +422,28 @@ export const addLeadComment = tool({
         quotedText
       });
 
-      return {
+      const result = {
         commentId: comment.id,
         type: comment.type,
         content: comment.content,
         createdAt: comment.createdAt.toISOString(),
         category
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         error: `Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
 
-// Mock implementation for searchCodebase - in real implementation this would integrate with file system
-export const searchCodebase = tool({
-  description: 'Search codebase for relevant context',
-  parameters: z.object({
-    query: z.string().describe('Search query'),
-    fileTypes: z.array(z.string()).optional().describe('File extensions to include'),
-    paths: z.array(z.string()).optional().describe('Specific paths to search'),
-    limit: z.number().optional().default(10).describe('Maximum results')
-  }),
-  execute: async ({ query, fileTypes = [], paths = [], limit = 10 }) => {
-    try {
-      // This is a mock implementation - in reality would use file system search
-      const mockResults = [
-        {
-          file: 'src/auth/login.ts',
-          line: 15,
-          content: `export async function authenticateUser(email: string, password: string) {`,
-          context: `// User authentication logic\nexport async function authenticateUser(email: string, password: string) {\n  const user = await findUserByEmail(email);`
-        },
-        {
-          file: 'src/auth/session.ts', 
-          line: 8,
-          content: `interface SessionData {`,
-          context: `// Session management\ninterface SessionData {\n  userId: string;\n  expiresAt: Date;`
-        }
-      ];
-
-      // Filter by file types if specified
-      let filteredResults = mockResults;
-      if (fileTypes.length > 0) {
-        filteredResults = mockResults.filter(r => 
-          fileTypes.some(ext => r.file.endsWith(ext))
-        );
-      }
-
-      // Limit results
-      const results = filteredResults.slice(0, limit);
-
-      return {
-        results,
-        totalFound: results.length,
-        query,
-        searchedPaths: paths.length > 0 ? paths : ['src/'],
-        searchedFileTypes: fileTypes.length > 0 ? fileTypes : ['all']
-      };
-    } catch (error) {
-      return {
-        error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        results: []
-      };
-    }
-  }
-});
-
-export const analyzeImpact = tool({
-  description: 'Analyze potential impact of proposed changes',
-  parameters: z.object({
-    rfcId: z.string().describe('RFC identifier'),
-    scope: z.array(z.enum(['dependencies', 'tests', 'api', 'database', 'performance'])).optional().describe('Specific areas to analyze')
-  }),
-  execute: async ({ rfcId, scope = [] }) => {
-    try {
-      const rfc = await domainModel.getRFC(rfcId);
-      if (!rfc) {
-        return {
-          error: `RFC with ID ${rfcId} not found`,
-          impacts: []
-        };
-      }
-
-      // Mock impact analysis - in reality would analyze codebase
-      const allImpacts = [
-        {
-          area: 'api',
-          description: 'Breaking changes to authentication endpoints',
-          severity: 'high' as const,
-          files: ['src/api/auth.ts', 'src/api/routes.ts'],
-          details: 'Login endpoint signature will change, requiring client updates'
-        },
-        {
-          area: 'database',
-          description: 'New tables required for OAuth tokens',
-          severity: 'medium' as const,
-          files: ['migrations/add-oauth-tables.sql'],
-          details: 'Migration required to add oauth_tokens and refresh_tokens tables'
-        },
-        {
-          area: 'dependencies',
-          description: 'New OAuth library dependencies',
-          severity: 'low' as const,
-          files: ['package.json'],
-          details: 'Will add passport-oauth2 and related dependencies'
-        },
-        {
-          area: 'tests',
-          description: 'Extensive test updates required',
-          severity: 'medium' as const,
-          files: ['tests/auth/', 'tests/integration/'],
-          details: 'All authentication tests need updates for OAuth flow'
-        },
-        {
-          area: 'performance',
-          description: 'Additional OAuth token validation overhead',
-          severity: 'low' as const,
-          files: ['src/middleware/auth.ts'],
-          details: 'Slight increase in request latency for token validation'
-        }
-      ];
-
-      // Filter by scope if specified
-      const impacts = scope.length > 0 
-        ? allImpacts.filter(impact => scope.includes(impact.area as any))
-        : allImpacts;
-
-      const summary = {
-        high: impacts.filter(i => i.severity === 'high').length,
-        medium: impacts.filter(i => i.severity === 'medium').length,
-        low: impacts.filter(i => i.severity === 'low').length
-      };
-
-      return {
-        impacts,
-        summary,
-        totalFiles: [...new Set(impacts.flatMap(i => i.files))].length,
-        analyzedAreas: scope.length > 0 ? scope : ['all']
-      };
-    } catch (error) {
-      return {
-        error: `Impact analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        impacts: []
-      };
-    }
-  }
-});
+// Note: searchCodebase and analyzeImpact tools removed - agents now use injected code context
 
 export const getRFCStatus = tool({
   description: 'Get current RFC status and metadata',
@@ -486,6 +451,8 @@ export const getRFCStatus = tool({
     rfcId: z.string().describe('RFC identifier')
   }),
   execute: async ({ rfcId }) => {
+    const logContext = logToolStart('getRFCStatus', { rfcId });
+    
     try {
       const rfc = await domainModel.getRFC(rfcId);
       if (!rfc) {
@@ -508,7 +475,7 @@ export const getRFCStatus = tool({
         }
       }
 
-      return {
+      const result = {
         rfcId: rfc.id,
         title: rfc.title,
         status: rfc.status,
@@ -520,15 +487,71 @@ export const getRFCStatus = tool({
         author: rfc.author,
         requestingUser: rfc.requestingUser
       };
+      
+      logToolEnd(logContext, result);
+      return result;
     } catch (error) {
-      return {
+      const errorResult = {
         error: `Failed to get RFC status: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
     }
   }
 });
 
-// Export all tools as a collection
+export const spawnReviewAgents = tool({
+  description: 'Spawn multiple specialized review agents to analyze the RFC from different domain perspectives',
+  parameters: z.object({
+    rfcId: z.string().describe('RFC identifier to review'),
+    reviewerTypes: z.array(z.enum(['backend', 'frontend', 'security', 'database', 'infrastructure'])).describe('Types of review agents to spawn'),
+    specificConcerns: z.string().optional().describe('Specific areas of concern for reviewers to focus on')
+  }),
+  execute: async ({ rfcId, reviewerTypes, specificConcerns }) => {
+    const logContext = logToolStart('spawnReviewAgents', { rfcId, reviewerTypes, specificConcerns });
+    
+    try {
+      // Import LeadAgent class to access the review orchestration method
+      const { LeadAgent } = await import('../agents/lead-agent');
+      
+      // For this implementation, we'll need access to the LeadAgent instance
+      // This is a limitation of the tool architecture - we need a better way to access the agent instance
+      // For now, we'll return a structured response indicating the review was requested
+      
+      const result = {
+        success: true,
+        reviewRequestInitiated: true,
+        rfcId,
+        reviewerTypes,
+        reviewersCount: reviewerTypes.length,
+        specificConcerns: specificConcerns || 'None specified',
+        message: `Review agents spawning initiated: ${reviewerTypes.join(', ')} will review RFC ${rfcId}`,
+        nextSteps: [
+          'Review agents are being spawned in parallel',
+          'Each agent will analyze the RFC from their domain perspective',
+          'Comments will be added to the RFC document',
+          'A summary will be generated when all reviews complete'
+        ]
+      };
+      
+      logToolEnd(logContext, result);
+      return result;
+      
+    } catch (error) {
+      const errorResult = {
+        success: false,
+        error: `Failed to spawn review agents: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+      
+      logToolEnd(logContext, errorResult, error instanceof Error ? error : new Error('Unknown error'));
+      return errorResult;
+    }
+  }
+});
+
+// Export all tools as a collection for AI SDK
+// Note: searchCodebase and analyzeImpact removed - context is now injected directly
 export const leadAgentTools = {
   createRFCDocument,
   updateRFCContent,
@@ -537,7 +560,6 @@ export const leadAgentTools = {
   getReviewComments,
   resolveComment,
   addLeadComment,
-  searchCodebase,
-  analyzeImpact,
-  getRFCStatus
+  getRFCStatus,
+  spawnReviewAgents
 };

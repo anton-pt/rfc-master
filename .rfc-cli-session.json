@@ -1,0 +1,10 @@
+{
+  "conversationHistory": [],
+  "lastActivity": "2025-08-07T14:10:09.476Z",
+  "statistics": {
+    "rfcsCreated": 0,
+    "reviewsRequested": 2,
+    "commandsExecuted": 15
+  },
+  "currentRFCId": "c4840441-b589-43f8-b77c-5ec47653e12b"
+}

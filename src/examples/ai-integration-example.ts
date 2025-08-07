@@ -1,7 +1,7 @@
-import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { RFCDomainModel, AgentType } from '../domain';
-import { leadAgentTools, initializeTools } from '../tools/lead-agent-tools';
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { RFCDomainModel, AgentType } from "../domain";
+import { leadAgentTools, initializeTools } from "../tools/lead-agent-tools";
 
 interface LeadAgentConfig {
   domainModel: RFCDomainModel;
@@ -17,46 +17,50 @@ export class LeadAgentService {
     initializeTools(config.domainModel, config.leadAgentId);
   }
 
-  async handleUserRequest(userMessage: string, conversationHistory: any[] = []) {
+  async handleUserRequest(
+    userMessage: string,
+    conversationHistory: any[] = []
+  ) {
     const messages = [
       {
-        role: 'system' as const,
-        content: this.config.systemPrompt
+        role: "system" as const,
+        content: this.config.systemPrompt,
       },
       ...conversationHistory,
       {
-        role: 'user' as const,
-        content: userMessage
-      }
+        role: "user" as const,
+        content: userMessage,
+      },
     ];
 
     try {
       const result = await generateText({
-        model: anthropic('claude-3-haiku-20240307'),
+        model: openai("gpt-4o"),
         tools: leadAgentTools,
-        toolChoice: 'auto',
+        toolChoice: "auto",
         messages,
-        maxTokens: 2000
+        maxTokens: 2000,
       });
 
       return {
         success: true,
         response: result.text,
         toolCalls: result.toolCalls,
-        usage: result.usage
+        usage: result.usage,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        response: 'I apologize, but I encountered an error processing your request.'
+        error: error instanceof Error ? error.message : "Unknown error",
+        response:
+          "I apologize, but I encountered an error processing your request.",
       };
     }
   }
 
   async generateRFCFromDescription(description: string, sections?: string[]) {
     const userMessage = `Create an RFC document with the following description: "${description}"${
-      sections ? ` Include these sections: ${sections.join(', ')}` : ''
+      sections ? ` Include these sections: ${sections.join(", ")}` : ""
     }. After creating the RFC, please search the codebase for relevant context and analyze the potential impact.`;
 
     return this.handleUserRequest(userMessage);
@@ -68,9 +72,15 @@ export class LeadAgentService {
     return this.handleUserRequest(userMessage);
   }
 
-  async requestFeedback(rfcId: string, reviewerTypes: string[], concerns?: string) {
-    const userMessage = `For RFC ${rfcId}, please request reviews from ${reviewerTypes.join(', ')} teams${
-      concerns ? ` with focus on: ${concerns}` : ''
+  async requestFeedback(
+    rfcId: string,
+    reviewerTypes: string[],
+    concerns?: string
+  ) {
+    const userMessage = `For RFC ${rfcId}, please request reviews from ${reviewerTypes.join(
+      ", "
+    )} teams${
+      concerns ? ` with focus on: ${concerns}` : ""
     }. Then check the current status and summarize what we're waiting for.`;
 
     return this.handleUserRequest(userMessage);
@@ -79,13 +89,13 @@ export class LeadAgentService {
 
 // Example usage
 async function demonstrateAIIntegration() {
-  console.log('🤖 AI Integration Example - Lead Agent Service\n');
+  console.log("🤖 AI Integration Example - Lead Agent Service\n");
 
   // Setup
   const domainModel = new RFCDomainModel();
   const leadAgent = await domainModel.createAgent(
     AgentType.LEAD,
-    'AI Lead Agent',
+    "AI Lead Agent",
     { canEdit: true, canComment: true, canApprove: true }
   );
 
@@ -110,31 +120,33 @@ async function demonstrateAIIntegration() {
   const leadAgentService = new LeadAgentService({
     domainModel,
     leadAgentId: leadAgent.id,
-    systemPrompt
+    systemPrompt,
   });
 
-  console.log('1️⃣ Creating RFC from natural language description...\n');
+  console.log("1️⃣ Creating RFC from natural language description...\n");
 
   const createResult = await leadAgentService.generateRFCFromDescription(
-    'We need to implement caching for our API responses to improve performance. The cache should support TTL, invalidation, and should work with Redis.',
-    ['problem', 'solution', 'implementation']
+    "We need to implement caching for our API responses to improve performance. The cache should support TTL, invalidation, and should work with Redis.",
+    ["problem", "solution", "implementation"]
   );
 
   if (createResult.success) {
-    console.log('✅ RFC Creation Response:');
+    console.log("✅ RFC Creation Response:");
     console.log(createResult.response);
     console.log(`\n📊 Tool calls made: ${createResult.toolCalls?.length || 0}`);
   } else {
-    console.log('❌ Error:', createResult.error);
+    console.log("❌ Error:", createResult.error);
     return;
   }
 
   // Extract RFC ID from tool calls (in a real app, you'd have a more robust way to do this)
-  const createRfcCall = createResult.toolCalls?.find(call => call.toolName === 'createRFCDocument');
+  const createRfcCall = createResult.toolCalls?.find(
+    (call) => call.toolName === "createRFCDocument"
+  );
   const rfcId = createRfcCall?.result?.rfcId;
 
   if (!rfcId) {
-    console.log('❌ Could not extract RFC ID from response');
+    console.log("❌ Could not extract RFC ID from response");
     return;
   }
 
@@ -142,77 +154,85 @@ async function demonstrateAIIntegration() {
 
   const reviewResult = await leadAgentService.requestFeedback(
     rfcId,
-    ['backend', 'infrastructure', 'security'],
-    'performance implications and Redis security configuration'
+    ["backend", "infrastructure", "security"],
+    "performance implications and Redis security configuration"
   );
 
   if (reviewResult.success) {
-    console.log('✅ Review Request Response:');
+    console.log("✅ Review Request Response:");
     console.log(reviewResult.response);
   }
 
   console.log(`\n3️⃣ Simulating feedback and iteration...\n`);
 
   // Simulate some reviewer feedback first (in real usage, this would come from other agents)
-  const backendAgent = await domainModel.createAgent(AgentType.BACKEND, 'Backend Expert');
+  const backendAgent = await domainModel.createAgent(
+    AgentType.BACKEND,
+    "Backend Expert"
+  );
   await domainModel.addComment({
     rfcId,
     agentId: backendAgent.id,
     agentType: AgentType.BACKEND,
-    commentType: 'document-level',
-    content: 'Consider implementing cache warming strategies for critical data. Also, we should add monitoring for cache hit rates.'
+    commentType: "document-level",
+    content:
+      "Consider implementing cache warming strategies for critical data. Also, we should add monitoring for cache hit rates.",
   });
 
   const iterationResult = await leadAgentService.reviewAndIterateRFC(
     rfcId,
-    'address any performance and monitoring concerns raised by reviewers'
+    "address any performance and monitoring concerns raised by reviewers"
   );
 
   if (iterationResult.success) {
-    console.log('✅ Iteration Response:');
+    console.log("✅ Iteration Response:");
     console.log(iterationResult.response);
   }
 
-  console.log('\n4️⃣ Final conversation - status check...\n');
+  console.log("\n4️⃣ Final conversation - status check...\n");
 
   const statusResult = await leadAgentService.handleUserRequest(
     `What's the current status of all RFCs? Provide a summary of what's pending and what actions are needed.`
   );
 
   if (statusResult.success) {
-    console.log('✅ Status Summary:');
+    console.log("✅ Status Summary:");
     console.log(statusResult.response);
   }
 
-  console.log('\n🎯 Key Benefits of This Integration:');
-  console.log('✓ Natural language interface for RFC management');
-  console.log('✓ Automated tool selection based on user intent');
-  console.log('✓ Comprehensive workflow orchestration');
-  console.log('✓ Structured data management with AI reasoning');
-  console.log('✓ Scalable architecture for complex RFC processes');
+  console.log("\n🎯 Key Benefits of This Integration:");
+  console.log("✓ Natural language interface for RFC management");
+  console.log("✓ Automated tool selection based on user intent");
+  console.log("✓ Comprehensive workflow orchestration");
+  console.log("✓ Structured data management with AI reasoning");
+  console.log("✓ Scalable architecture for complex RFC processes");
 }
 
 // Advanced example: Streaming responses for long operations
 export async function streamingRFCGeneration(userRequest: string) {
   const domainModel = new RFCDomainModel();
-  const leadAgent = await domainModel.createAgent(AgentType.LEAD, 'Streaming Lead Agent');
-  
+  const leadAgent = await domainModel.createAgent(
+    AgentType.LEAD,
+    "Streaming Lead Agent"
+  );
+
   initializeTools(domainModel, leadAgent.id);
 
   const result = await streamText({
-    model: anthropic('claude-3-haiku-20240307'),
+    model: anthropic("claude-3-haiku-20240307"),
     tools: leadAgentTools,
     maxTokens: 2000,
     messages: [
       {
-        role: 'system',
-        content: 'You are a lead architect. Create RFCs and explain your process step by step.'
+        role: "system",
+        content:
+          "You are a lead architect. Create RFCs and explain your process step by step.",
       },
       {
-        role: 'user', 
-        content: userRequest
-      }
-    ]
+        role: "user",
+        content: userRequest,
+      },
+    ],
   });
 
   return result;
