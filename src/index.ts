@@ -74,17 +74,10 @@ export class RFCCLI {
   private commands: Map<string, CLICommand> = new Map();
   private isRunning = false;
 
-  constructor() {
+  private constructor() {
     // Initialize domain model
     const storage = new InMemoryStorage();
     this.domainModel = new RFCDomainModel(storage);
-
-    // Load codebase context from todo.ts
-    const TODO_FILE_PATH = './demo/todo.ts';
-    const codebaseContext = createAgentContext(TODO_FILE_PATH);
-
-    // Initialize lead agent with context
-    this.agent = createLeadAgent(this.domainModel, codebaseContext);
 
     // Initialize readline interface
     this.rl = readline.createInterface({
@@ -102,6 +95,27 @@ export class RFCCLI {
 
     // Setup event handlers
     this.setupEventHandlers();
+  }
+
+  /**
+   * Static factory method to create and initialize CLI
+   */
+  static async create(): Promise<RFCCLI> {
+    const cli = new RFCCLI();
+    await cli.initialize();
+    return cli;
+  }
+
+  /**
+   * Initialize the CLI with async operations
+   */
+  private async initialize(): Promise<void> {
+    // Load codebase context from todo.ts
+    const TODO_FILE_PATH = './demo/todo.ts';
+    const codebaseContext = createAgentContext(TODO_FILE_PATH);
+
+    // Initialize lead agent with context (now async)
+    this.agent = await createLeadAgent(this.domainModel, codebaseContext);
   }
 
   /**
@@ -600,7 +614,7 @@ export class RFCCLI {
  * Main entry point
  */
 async function main(): Promise<void> {
-  const cli = new RFCCLI();
+  const cli = await RFCCLI.create();
   await cli.start();
 }
 

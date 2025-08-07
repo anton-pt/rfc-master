@@ -104,12 +104,56 @@ export class LeadAgent {
       context: { userRequest: "" },
     };
 
-    // Initialize tools with domain model
-    initializeTools(domainModel, agentId);
+    // Initialize tools with domain model and agent instance
+    initializeTools(domainModel, agentId, this);
 
     // Log context summary for debugging
     console.log("🔧 Lead Agent initialized with codebase context:");
     console.log(summarizeContext(codebaseContext));
+  }
+
+  /**
+   * Ensure the lead agent exists in the domain model
+   * This should be called after construction to register the agent
+   */
+  async ensureRegistered(): Promise<void> {
+    try {
+      // Check if agent already exists (by type since we can't control the generated ID)
+      const agents = await this.domainModel.listAgents();
+      const existingAgent = agents.find(agent => agent.type === AgentType.LEAD);
+      
+      if (!existingAgent) {
+        console.log(`🤖 Registering lead agent...`);
+        const createdAgent = await this.domainModel.createAgent(
+          AgentType.LEAD,
+          'RFC Lead Agent',
+          {
+            canComment: true,
+            canEdit: true,
+            canApprove: true
+          }
+        );
+        
+        // Update our agent ID to match the created agent
+        this.agentId = createdAgent.id;
+        
+        // Re-initialize tools with the correct agent ID
+        initializeTools(this.domainModel, this.agentId, this);
+        
+        console.log(`✅ Lead agent registered with ID: ${this.agentId}`);
+      } else {
+        // Update our agent ID to match the existing agent
+        this.agentId = existingAgent.id;
+        
+        // Re-initialize tools with the correct agent ID
+        initializeTools(this.domainModel, this.agentId, this);
+        
+        console.log(`✅ Lead agent found: ${existingAgent.name} (ID: ${this.agentId})`);
+      }
+    } catch (error) {
+      console.error(`❌ Failed to register lead agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
   }
 
   /**
@@ -883,11 +927,11 @@ export class LeadAgent {
 /**
  * Factory function to create a configured lead agent with codebase context
  */
-export function createLeadAgent(
+export async function createLeadAgent(
   domainModel: RFCDomainModel,
   codebaseContext: AgentContext,
   options: Partial<LeadAgentConfig> = {}
-): LeadAgent {
+): Promise<LeadAgent> {
   const defaultConfig: LeadAgentConfig = {
     model: openai("gpt-4o"),
     systemPrompt: createSystemPrompt(),
@@ -896,7 +940,12 @@ export function createLeadAgent(
   };
 
   const config = { ...defaultConfig, ...options };
-  return new LeadAgent(config, domainModel, codebaseContext);
+  const agent = new LeadAgent(config, domainModel, codebaseContext);
+  
+  // Ensure the agent is registered in the domain model
+  await agent.ensureRegistered();
+  
+  return agent;
 }
 
 /**

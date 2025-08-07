@@ -46,10 +46,14 @@ function logToolEnd(context: ToolLogContext, result: any, error?: Error): void {
 
 let domainModel: RFCDomainModel;
 let leadAgentId: string;
+let leadAgentInstance: any; // Reference to the LeadAgent instance for review orchestration
 
-export function initializeTools(model: RFCDomainModel, agentId: string) {
+export function initializeTools(model: RFCDomainModel, agentId: string, agentInstance?: any) {
   domainModel = model;
   leadAgentId = agentId;
+  if (agentInstance) {
+    leadAgentInstance = agentInstance;
+  }
 }
 
 // Schema definitions for reuse
@@ -211,7 +215,7 @@ export const addSection = tool({
 });
 
 export const requestReview = tool({
-  description: 'Request review from specialized agents',
+  description: 'Request review from specialized agents and execute the full review process with comment generation',
   parameters: z.object({
     rfcId: z.string().describe('RFC identifier'),
     reviewerTypes: z.array(reviewerTypeSchema).describe('Agent types to request review from'),
@@ -221,7 +225,7 @@ export const requestReview = tool({
     const logContext = logToolStart('requestReview', { rfcId, reviewerTypes, specificConcerns });
     
     try {
-      // Get or create reviewer agents
+      // First create the review request record for tracking
       const reviewerAgents = [];
       for (const type of reviewerTypes) {
         const agentTypeEnum = type.toUpperCase() as keyof typeof AgentType;
@@ -254,6 +258,19 @@ export const requestReview = tool({
         });
       }
 
+      // Now actually spawn and execute the review agents to generate comments
+      let reviewSummary;
+      if (leadAgentInstance) {
+        console.log('   🚀 Executing review agents to generate actual comments...');
+        reviewSummary = await leadAgentInstance.spawnReviewAgents(
+          rfcId,
+          reviewerTypes,
+          specificConcerns
+        );
+      } else {
+        console.warn('   ⚠️  Lead agent instance not available for review execution');
+      }
+
       const result = {
         reviewRequestId: reviewRequest.id,
         reviewersAssigned: reviewerAgents.map(agent => ({
@@ -261,7 +278,12 @@ export const requestReview = tool({
           agentType: agent.type,
           name: agent.name
         })),
-        rfcVersion: reviewRequest.rfcVersion
+        rfcVersion: reviewRequest.rfcVersion,
+        // Include review results if available
+        reviewsExecuted: !!reviewSummary,
+        totalComments: reviewSummary?.totalComments || 0,
+        criticalIssues: reviewSummary?.criticalIssues || 0,
+        overallRecommendation: reviewSummary?.overallRecommendation || 'Review in progress'
       };
       
       logToolEnd(logContext, result);
@@ -502,7 +524,7 @@ export const getRFCStatus = tool({
 });
 
 export const spawnReviewAgents = tool({
-  description: 'Spawn multiple specialized review agents to analyze the RFC from different domain perspectives',
+  description: 'Advanced tool to spawn multiple specialized review agents in parallel for comprehensive RFC analysis (use requestReview for standard review requests)',
   parameters: z.object({
     rfcId: z.string().describe('RFC identifier to review'),
     reviewerTypes: z.array(z.enum(['backend', 'frontend', 'security', 'database', 'infrastructure'])).describe('Types of review agents to spawn'),
@@ -512,27 +534,55 @@ export const spawnReviewAgents = tool({
     const logContext = logToolStart('spawnReviewAgents', { rfcId, reviewerTypes, specificConcerns });
     
     try {
-      // Import LeadAgent class to access the review orchestration method
-      const { LeadAgent } = await import('../agents/lead-agent');
+      // Check if we have access to the lead agent instance
+      if (!leadAgentInstance) {
+        console.warn('   ⚠️  Lead agent instance not available, using fallback approach');
+        
+        // Fallback: Return structured response indicating review was requested
+        const result = {
+          success: true,
+          reviewRequestInitiated: true,
+          rfcId,
+          reviewerTypes,
+          reviewersCount: reviewerTypes.length,
+          specificConcerns: specificConcerns || 'None specified',
+          message: `Review agents spawning requested: ${reviewerTypes.join(', ')} will review RFC ${rfcId}`,
+          nextSteps: [
+            'Review agents will be spawned in parallel',
+            'Each agent will analyze the RFC from their domain perspective',
+            'Comments will be added to the RFC document',
+            'A summary will be generated when all reviews complete'
+          ]
+        };
+        
+        logToolEnd(logContext, result);
+        return result;
+      }
       
-      // For this implementation, we'll need access to the LeadAgent instance
-      // This is a limitation of the tool architecture - we need a better way to access the agent instance
-      // For now, we'll return a structured response indicating the review was requested
-      
-      const result = {
-        success: true,
-        reviewRequestInitiated: true,
+      // Call the lead agent's spawnReviewAgents method
+      console.log('   🚀 Calling lead agent review orchestration...');
+      const reviewSummary = await leadAgentInstance.spawnReviewAgents(
         rfcId,
         reviewerTypes,
-        reviewersCount: reviewerTypes.length,
+        specificConcerns
+      );
+      
+      // Format the result for the tool response
+      const result = {
+        success: true,
+        reviewsCompleted: true,
+        rfcId,
+        reviewerTypes,
+        reviewersCount: reviewSummary.totalReviews,
+        totalComments: reviewSummary.totalComments,
+        criticalIssues: reviewSummary.criticalIssues,
+        overallRecommendation: reviewSummary.overallRecommendation,
+        recommendations: reviewSummary.recommendations,
+        severityBreakdown: reviewSummary.severityBreakdown,
+        averageReviewTime: reviewSummary.averageReviewTime,
         specificConcerns: specificConcerns || 'None specified',
-        message: `Review agents spawning initiated: ${reviewerTypes.join(', ')} will review RFC ${rfcId}`,
-        nextSteps: [
-          'Review agents are being spawned in parallel',
-          'Each agent will analyze the RFC from their domain perspective',
-          'Comments will be added to the RFC document',
-          'A summary will be generated when all reviews complete'
-        ]
+        message: `Successfully spawned ${reviewSummary.totalReviews} review agents and generated ${reviewSummary.totalComments} comments`,
+        summary: `Overall recommendation: ${reviewSummary.overallRecommendation}. Found ${reviewSummary.criticalIssues} critical issues.`
       };
       
       logToolEnd(logContext, result);
